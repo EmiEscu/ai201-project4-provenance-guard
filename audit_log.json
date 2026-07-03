@@ -1,0 +1,38 @@
+[
+  {
+    "content_id": "90a3ec9f-58da-4599-8ed9-9d66c25530c9",
+    "creator_id": "test-user-1",
+    "timestamp": "2026-07-03T13:22:41.593059+00:00",
+    "attribution": "likely_human",
+    "confidence": null,
+    "llm_score": 0.2,
+    "status": "classified"
+  },
+  {
+    "content_id": "33c19615-dca2-456f-8b90-15bb18ea824f",
+    "creator_id": "test-user-1",
+    "timestamp": "2026-07-03T13:33:20.820881+00:00",
+    "attribution": "likely_ai",
+    "confidence": null,
+    "llm_score": 0.9,
+    "status": "classified"
+  },
+  {
+    "content_id": "f94329f8-e8df-4b21-9787-5a44422efeb6",
+    "creator_id": "test-user-2",
+    "timestamp": "2026-07-03T13:33:55.819904+00:00",
+    "attribution": "likely_human",
+    "confidence": null,
+    "llm_score": 0.05,
+    "status": "classified"
+  },
+  {
+    "content_id": "1974ffcf-f061-40ab-a83b-51667806c8a9",
+    "creator_id": "test-user-3",
+    "timestamp": "2026-07-03T13:34:10.259272+00:00",
+    "attribution": "likely_ai",
+    "confidence": null,
+    "llm_score": 0.8,
+    "status": "classified"
+  }
+]
