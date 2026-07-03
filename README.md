@@ -1,5 +1,6 @@
 # Provenance Guard
 
+## DEMO VIDEO: https://youtu.be/sFkykcQSYes
 A backend system for creative sharing platforms that classifies submitted text as likely AI-generated or human-written, scores confidence honestly (including "we don't know"), surfaces a plain-language transparency label, and gives creators a path to appeal a classification they disagree with.
 
 Full design spec — including the architecture diagrams, exact thresholds, and the reasoning behind every number — lives in [planning.md](planning.md). This README summarizes the same decisions with an emphasis on *why*, plus real output from testing.
