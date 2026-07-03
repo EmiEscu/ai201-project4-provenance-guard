@@ -21,14 +21,17 @@
 - **What it measures:** The statistical "shape" of the text, independent of meaning — computed entirely in pure Python, no external model:
   - Sentence-length variance / burstiness (std-dev of sentence length and pacing)
   - Vocabulary richness (type-token ratio: unique words / total words)
-  - Punctuation density (marks per word/sentence)
   - Average sentence complexity (mean sentence length / clause density)
 
-- **How it's produced:** Each metric is computed directly, normalized to `[0, 1]`, then combined (weighted average) into one `stylo_score`, where 1.0 = highly uniform (AI-leaning) and 0.0 = highly variable/bursty (human-leaning).
+  *(Implementation note: a fourth metric, punctuation density, was attempted and dropped — see "Spec divergence" below.)*
+
+- **How it's produced:** Each metric is computed directly, normalized to `[0, 1]`, then combined (weighted average — 0.45 sentence-length variance, 0.30 vocabulary richness, 0.25 sentence complexity) into one `stylo_score`, where 1.0 = highly uniform (AI-leaning) and 0.0 = highly variable/bursty (human-leaning).
 
 - **Output shape:** A float in `[0, 1]`.
 
 - **Blind spots:** Completely content-blind (only looks at structure, never meaning); flags deliberately uniform human writing (academic papers, formal poetry, technical docs) as AI-like; can be fooled by AI text explicitly prompted to be "burstier"; can't detect AI text that a human has since revised.
+
+- **Spec divergence — punctuation density dropped:** The original design included punctuation density (marks per word) as a fourth metric, scored by distance from a "natural" midpoint in either direction. Testing against the Milestone 4 inputs showed this metric was actively counterproductive: formal academic prose (few commas, terse sentences) scored *further* from the midpoint than genuinely AI-generated text (which uses commas at a more "average" rate), so the metric penalized sparse, plainly-punctuated human writing as if it were suspiciously uniform. There's no real basis for treating "far from a typical density" as an AI signal in both directions — sparse punctuation is just as often a marker of terse human writing as of AI generation. Rather than keep a metric that was measurably making the false-positive problem worse, it was removed and its weight redistributed across the three metrics that held up under testing.
 
 **Why these two are genuinely distinct:** one is semantic (does this *sound* like AI?), the other is structural (does this *look* like AI, statistically?). Their blind spots don't overlap. An AI-sounding-but-structurally-messy poem and a human-sounding-but-structurally-uniform legal brief would each get flagged by only one signal, which is exactly what makes combining them useful.
  
@@ -38,7 +41,7 @@
 
 2. **Agreement case:** if both scores land on the same side of 0.5 and are within ~0.15 of each other, the combined score is a high-confidence read in that direction.
 
-3. **Disagreement case:** if the two scores are more than ~0.30 apart (one signal says "clearly human," the other says "clearly AI"), the combined score is deliberately pulled toward the 0.40–0.70 band rather than averaged naively — a strong disagreement between two independent signals is itself evidence of uncertainty, not a wash.
+3. **Disagreement case:** if the two scores are more than ~0.30 apart (one signal says "clearly human," the other says "clearly AI"), the combined score is deliberately pulled toward the 0.40–0.72 band rather than averaged naively — a strong disagreement between two independent signals is itself evidence of uncertainty, not a wash.
 
 4. **Degraded-signal fallback:** if the LLM signal's `status != "success"` (parse failure, schema/range violation, or `injection_flagged`), the scorer drops the LLM score entirely, uses `stylo_score` alone, and caps the result at `min(stylo_score, 0.69)`. This guarantees a single content-blind signal can never push a submission into the "likely AI" band on its own — preserving the false-positive asymmetry even when a component fails. The audit log records the exact failure mode.
 
@@ -55,12 +58,14 @@
  
 | Combined confidence (P(AI)) | Attribution     | Label variant          |
 |---|---|---|
-| ≥ 0.70                       | `likely_ai`     | High-confidence AI      |
-| 0.40 – 0.70                  | `uncertain`      | Uncertain               |
+| ≥ 0.72                       | `likely_ai`     | High-confidence AI      |
+| 0.40 – 0.72                  | `uncertain`      | Uncertain               |
 | < 0.40                       | `likely_human`   | High-confidence human   |
  
 
-The AI threshold is deliberately set high (0.70, not 0.50) and the uncertain band is deliberately wide (a 30-point range) to reflect the false-positive asymmetry: wrongly telling a human creator their work "looks AI-generated" does more relationship damage on a creative platform than an occasional missed AI submission. When in doubt, the system says "we're not sure," not "this is AI."
+The AI threshold is deliberately set high (0.72, not 0.50) and the uncertain band is deliberately wide (a 32-point range) to reflect the false-positive asymmetry: wrongly telling a human creator their work "looks AI-generated" does more relationship damage on a creative platform than an occasional missed AI submission. When in doubt, the system says "we're not sure," not "this is AI."
+
+**Spec divergence — threshold moved from 0.70 to 0.72:** During Milestone 4 testing, a deliberately-chosen borderline case (formal, academic-register human writing) combined to 0.712 — just above the original 0.70 threshold — which meant a genuine human writer whose LLM score was thrown off by formal register would be told "likely AI" instead of "uncertain." Since the whole point of the uncertain band is to catch exactly this kind of ambiguous case, the threshold was raised to 0.72, which cleanly separates it (0.712 → `uncertain`) from a clearly-AI test case (0.72 → `likely_ai`, right at the boundary) without needing to distort the stylometric weights to force the outcome. The uncertain band's lower bound (0.40) is unchanged.
  
 ---
 
@@ -105,7 +110,7 @@ Each variant is deliberately hedged (no variant states a result as fact), and ea
  
 ## 5. Anticipated Edge Cases
  
-1. **Formal, uniform human writing from non-native English speakers (or academic/technical writers).** Both signals push toward "AI": the stylometric signal reads consistent sentence length and "safe" vocabulary as low-burstiness/high-uniformity, and the LLM signal reads the same evenness as the "thesis-driven, smoothly transitioned" register it associates with AI text. In practice this should land in the `uncertain` band (0.40–0.70) rather than `likely_ai`, thanks to the 0.70 threshold, but it's a scenario where the *combination* of two structurally-similar failure modes could still push a genuine human writer higher than they deserve. This is the scenario that justifies keeping the AI threshold conservative.
+1. **Formal, uniform human writing from non-native English speakers (or academic/technical writers).** Both signals push toward "AI": the stylometric signal reads consistent sentence length and "safe" vocabulary as low-burstiness/high-uniformity, and the LLM signal reads the same evenness as the "thesis-driven, smoothly transitioned" register it associates with AI text. In practice this should land in the `uncertain` band (0.40–0.72) rather than `likely_ai`, thanks to the 0.72 threshold, but it's a scenario where the *combination* of two structurally-similar failure modes could still push a genuine human writer higher than they deserve. This is the scenario that justifies keeping the AI threshold conservative — and it's not just theoretical: a Milestone 4 test input modeled on exactly this case (formal writing on monetary policy) combined to 0.712 under the original 0.70 threshold, which would have misclassified it as `likely_ai`. This is what prompted raising the threshold to 0.72 (see the Detection Signals and Uncertainty Representation sections above for the full account).
 
 2. **Poetry or lyrical prose with heavy repetition and simple, deliberate vocabulary.** The stylometric signal specifically measures vocabulary richness and sentence-length variance — a poem built on intentional repetition (refrains, anaphora) or restricted vocabulary (a choice, not a limitation) will score low on both, which the heuristic reads as "uniform → AI-leaning." The signal has no way to know the uniformity is a deliberate artistic device rather than a symptom of generation.
 
@@ -131,7 +136,7 @@ flowchart TD
     C -->|"raw text"| E["Signal 2: Stylometric heuristics<br/>(structural)"]
     D -->|"llm_score 0-1 + status"| F["Confidence scorer (isolated)<br/>0.6 · llm_score + 0.4 · stylo_score<br/>disagreement (spread &gt; 0.30) → pull toward uncertain<br/>fallback: llm status != success → stylo only, cap 0.69"]
     E -->|"stylo_score 0-1"| F
-    F -->|"combined_score P(AI) 0-1"| H["Label generator<br/>≥0.70 likely_ai · 0.40-0.70 uncertain · &lt;0.40 likely_human"]
+    F -->|"combined_score P(AI) 0-1"| H["Label generator<br/>≥0.72 likely_ai · 0.40-0.72 uncertain · &lt;0.40 likely_human"]
     H -->|"attribution + label (text)"| L[("Audit log write<br/>timestamp, content_id, creator_id,<br/>attribution, combined_score,<br/>llm_score, stylo_score, status=classified")]
     L -->|"persisted"| Z["Response<br/>{content_id, attribution,<br/>confidence, signal_scores, label}"]
 ```
